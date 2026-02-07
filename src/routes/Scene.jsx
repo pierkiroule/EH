@@ -286,11 +286,9 @@ export default function Scene() {
       <div ref={mountRef} style={{ position: "absolute", inset: 0 }} />
 
       {!started && (
-        <div
+        <button
+          type="button"
           onClick={start}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && start()}
           style={{
             position: "absolute",
             inset: 0,
@@ -301,10 +299,11 @@ export default function Scene() {
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
+            border: "none",
           }}
         >
           Entrer
-        </div>
+        </button>
       )}
     </div>
   );
