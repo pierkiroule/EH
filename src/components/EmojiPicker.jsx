@@ -2,13 +2,10 @@ export default function EmojiPicker({ value = [], onChange }) {
   const EMOJIS = ["🌊", "🌑", "🕯️", "🔥", "🌬️"];
 
   const toggle = (emoji) => {
-    console.log("TOGGLE", emoji, value);
-
     if (value.includes(emoji)) {
       onChange(value.filter((e) => e !== emoji));
       return;
     }
-
     if (value.length >= 3) return;
     onChange([...value, emoji]);
   };
@@ -17,7 +14,6 @@ export default function EmojiPicker({ value = [], onChange }) {
     <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
       {EMOJIS.map((emoji) => {
         const active = value.includes(emoji);
-
         return (
           <button
             key={emoji}

@@ -5,72 +5,78 @@ import EmojiPicker from "../components/EmojiPicker";
 
 export default function Experience() {
   const [selectedEmojis, setSelectedEmojis] = useState([]);
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState(null);
+
   const navigate = useNavigate();
 
   const generate = async () => {
-    console.log("🧪 ENTER CLICKED", selectedEmojis);
+    setError(null);
 
     if (selectedEmojis.length !== 3) return;
+
+    setStatus("creating");
 
     let scene;
     try {
       scene = await createScene({ emojis: selectedEmojis });
     } catch (e) {
-      console.error("SCENE CREATION ERROR", e);
+      setStatus("error");
+      setError(e?.message || JSON.stringify(e));
       return;
     }
 
     if (!scene || !scene.id) {
-      console.error("INVALID SCENE", scene);
+      setStatus("error");
+      setError("Scene invalide (id manquant)");
       return;
     }
 
+    setStatus("navigating");
     navigate(`/scene/${scene.id}`);
   };
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    generate();
-  };
-
   return (
-    <form
-      onSubmit={handleSubmit}
+    <div
       style={{
-        position: "relative",
-        zIndex: 1000,
-        pointerEvents: "auto",
-        padding: 20,
+        position: "fixed",
+        inset: 0,
+        background: "#000",
+        color: "#fff",
+        zIndex: 999999,
+        padding: 24,
       }}
     >
       <h2>Choisis 3 émojis</h2>
 
       <EmojiPicker value={selectedEmojis} onChange={setSelectedEmojis} />
 
-      <button
-        type="button"
+      <div
         onClick={generate}
-        disabled={selectedEmojis.length !== 3}
         style={{
-          marginTop: 24,
-          padding: "14px 28px",
-          background: selectedEmojis.length === 3 ? "#111" : "#444",
-          color: "white",
-          borderRadius: 14,
-          fontSize: 18,
+          marginTop: 32,
+          padding: 20,
+          background: selectedEmojis.length === 3 ? "#fff" : "#444",
+          color: "#000",
+          fontSize: 20,
+          borderRadius: 12,
+          textAlign: "center",
           cursor: selectedEmojis.length === 3 ? "pointer" : "not-allowed",
-          display: "inline-block",
           userSelect: "none",
-          border: "none",
-          opacity: selectedEmojis.length === 3 ? 1 : 0.7,
         }}
       >
-        Entrer
-      </button>
+        ENTRER
+      </div>
 
-      <pre style={{ marginTop: 12 }}>
-        {JSON.stringify(selectedEmojis)}
-      </pre>
-    </form>
+      <div style={{ marginTop: 16, fontSize: 14, opacity: 0.7 }}>
+        Status : {status}
+      </div>
+
+      {error && (
+        <div style={{ marginTop: 12, color: "red" }}>
+          ❌ {error}
+        </div>
+      )}
+    </div>
   );
 }

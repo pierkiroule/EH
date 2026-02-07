@@ -1,91 +1,151 @@
 /**
- * Scene Composer V1
- * - pure logic
- * - seed-based uniqueness
+ * Scene Composer — V1 BLINDÉ
+ * - jamais de blocage
+ * - fallback intelligent
+ * - compatible mobile
+ * - aligné schema Supabase
  */
 
-/* -------- seeded random -------- */
+/* ------------------ utils ------------------ */
 
-function seededRandom(seed) {
-  let t = seed % 2147483647;
-  return () => (t = (t * 16807) % 2147483647) / 2147483647;
+function pickOne(list) {
+  if (!list || list.length === 0) return null;
+  return list[Math.floor(Math.random() * list.length)];
 }
 
-/* -------- utils -------- */
-
-function pickOne(list, rand) {
-  if (!list.length) return null;
-  return list[Math.floor(rand() * list.length)];
-}
-
-function pickMany(list, max, rand) {
-  const shuffled = [...list].sort(() => rand() - 0.5);
+function pickMany(list, max = 1) {
+  if (!list || list.length === 0) return [];
+  const shuffled = [...list].sort(() => 0.5 - Math.random());
   return shuffled.slice(0, max);
 }
 
-function spreadOver(items, duration, rand) {
-  return items.map((item) => ({
+function spreadOver(items, duration, minGap = 20) {
+  if (!items || items.length === 0) return [];
+
+  const step = Math.max(minGap, duration / (items.length + 1));
+
+  return items.map((item, i) => ({
     ...item,
-    start: Math.floor(rand() * duration * 0.8),
+    start: Math.round((i + 1) * step),
   }));
 }
 
-/* -------- composer -------- */
+/* ------------------ composer ------------------ */
 
-export function composeScene({ assets, climate, seed }) {
-  const rand = seededRandom(seed);
-
-  /* --- pools --- */
-  const musicPool = assets.filter(
-    (a) => a.category === "music" && a.climate === climate
-  );
-
-  const videoPool = assets.filter(
-    (a) => a.category === "video" && a.climate === climate
-  );
-
-  const voicePool = assets.filter(
-    (a) => a.category === "voice" && a.climate === climate
-  );
-
-  const music = pickOne(musicPool, rand);
-  if (!music) throw new Error("No music for climate " + climate);
-
-  if (!videoPool.length) {
-    throw new Error("No video for climate " + climate);
+export function composeScene({ assets, climate }) {
+  if (!assets || assets.length === 0) {
+    throw new Error("No media assets provided");
   }
 
-  const duration = music.duration || 180;
+  /* ---------- MUSIC (maîtresse) ---------- */
 
-  const videos = pickMany(videoPool, 1 + Math.floor(rand() * 2), rand).map(
-    (v) => ({
-      id: v.id,
-      path: v.path,
-      start: 0,
-      end: duration,
-      opacity: 1,
-      blend: "normal",
-    })
+  const musicPrimary = assets.filter(
+    (a) =>
+      a.category === "music" &&
+      a.climate === climate &&
+      a.enabled
   );
 
-  const voices = spreadOver(
-    pickMany(voicePool, 1 + Math.floor(rand() * 3), rand),
-    duration,
-    rand
-  ).map((v) => ({
+  let music = pickOne(musicPrimary);
+
+  // 🔥 FALLBACK 1 — calm
+  if (!music) {
+    const calmPool = assets.filter(
+      (a) =>
+        a.category === "music" &&
+        a.climate === "calm" &&
+        a.enabled
+    );
+    music = pickOne(calmPool);
+  }
+
+  // 🔥 FALLBACK 2 — any music
+  if (!music) {
+    const anyMusic = assets.filter(
+      (a) =>
+        a.category === "music" &&
+        a.enabled
+    );
+    music = pickOne(anyMusic);
+  }
+
+  if (!music) {
+    throw new Error("No music available in media_assets");
+  }
+
+  // V1 durée fixe (simplification volontaire)
+  const duration = 180;
+
+  /* ---------- VIDEO ---------- */
+
+  const videoPrimary = assets.filter(
+    (a) =>
+      a.category === "video" &&
+      a.climate === climate &&
+      a.enabled
+  );
+
+  let videos = pickMany(videoPrimary, 1);
+
+  // fallback vidéo
+  if (videos.length === 0) {
+    const anyVideo = assets.filter(
+      (a) =>
+        a.category === "video" &&
+        a.enabled
+    );
+    videos = pickMany(anyVideo, 1);
+  }
+
+  videos = videos.map((v) => ({
     id: v.id,
     path: v.path,
-    start: v.start,
-    gain: 0.5 + rand() * 0.3,
+    start: 0,
+    end: duration,
+    opacity: 1,
+    blend: "normal",
   }));
+
+  /* ---------- VOICES ---------- */
+
+  const voicePrimary = assets.filter(
+    (a) =>
+      a.category === "voice" &&
+      a.climate === climate &&
+      a.enabled
+  );
+
+  let voicesRaw = pickMany(voicePrimary, 3);
+
+  // fallback voix
+  if (voicesRaw.length === 0) {
+    const anyVoice = assets.filter(
+      (a) =>
+        a.category === "voice" &&
+        a.enabled
+    );
+    voicesRaw = pickMany(anyVoice, 2);
+  }
+
+  const voices = spreadOver(
+    voicesRaw.map((v) => ({
+      id: v.id,
+      path: v.path,
+      gain: 0.6,
+    })),
+    duration
+  );
+
+  /* ---------- FX ---------- */
 
   const fx = [
     {
       type: "particles",
-      preset: climate,
-      intensity: 0.3 + rand() * 0.5,
+      preset: climate || "calm",
     },
   ];
+
+  /* ---------- FINAL DESCRIPTOR ---------- */
 
   return {
     duration,
