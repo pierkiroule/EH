@@ -41,26 +41,26 @@ export default function Experience() {
 
       <EmojiPicker value={selectedEmojis} onChange={setSelectedEmojis} />
 
-      {/* CTA SAFE — pas de <button> */}
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         onClick={generate}
-        onKeyDown={(e) => e.key === "Enter" && generate()}
+        disabled={selectedEmojis.length !== 3}
         style={{
           marginTop: 24,
           padding: "14px 28px",
-          background: "#111",
+          background: selectedEmojis.length === 3 ? "#111" : "#444",
           color: "white",
           borderRadius: 14,
           fontSize: 18,
-          cursor: "pointer",
+          cursor: selectedEmojis.length === 3 ? "pointer" : "not-allowed",
           display: "inline-block",
           userSelect: "none",
+          border: "none",
+          opacity: selectedEmojis.length === 3 ? 1 : 0.7,
         }}
       >
         Entrer
-      </div>
+      </button>
 
       <pre style={{ marginTop: 12 }}>
         {JSON.stringify(selectedEmojis)}

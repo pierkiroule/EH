@@ -59,6 +59,16 @@ export default function Scene() {
   useEffect(() => {
     if (!descriptor || !mountRef.current) return;
 
+    if (!descriptor.videos || descriptor.videos.length === 0) {
+      setError("Aucune vidéo disponible pour cette scène.");
+      return;
+    }
+
+    if (!descriptor.music?.path) {
+      setError("Musique manquante pour cette scène.");
+      return;
+    }
+
     const mount = mountRef.current;
 
     /* --- renderer --- */
@@ -276,11 +286,9 @@ export default function Scene() {
       <div ref={mountRef} style={{ position: "absolute", inset: 0 }} />
 
       {!started && (
-        <div
+        <button
+          type="button"
           onClick={start}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && start()}
           style={{
             position: "absolute",
             inset: 0,
@@ -291,10 +299,11 @@ export default function Scene() {
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
+            border: "none",
           }}
         >
           Entrer
-        </div>
+        </button>
       )}
     </div>
   );
