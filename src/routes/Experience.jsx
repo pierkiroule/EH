@@ -48,7 +48,8 @@ export default function Experience() {
       <EmojiPicker value={selectedEmojis} onChange={setSelectedEmojis} />
 
       <button
-        type="submit"
+        type="button"
+        onClick={generate}
         disabled={selectedEmojis.length !== 3}
         style={{
           marginTop: 24,
