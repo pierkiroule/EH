@@ -28,8 +28,14 @@ export default function Experience() {
     navigate(`/scene/${scene.id}`);
   };
 
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    generate();
+  };
+
   return (
-    <div
+    <form
+      onSubmit={handleSubmit}
       style={{
         position: "relative",
         zIndex: 1000,
@@ -65,6 +71,6 @@ export default function Experience() {
       <pre style={{ marginTop: 12 }}>
         {JSON.stringify(selectedEmojis)}
       </pre>
-    </div>
+    </form>
   );
 }
