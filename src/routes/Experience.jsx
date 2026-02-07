@@ -28,8 +28,14 @@ export default function Experience() {
     navigate(`/scene/${scene.id}`);
   };
 
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    generate();
+  };
+
   return (
-    <div
+    <form
+      onSubmit={handleSubmit}
       style={{
         position: "relative",
         zIndex: 1000,
@@ -41,30 +47,29 @@ export default function Experience() {
 
       <EmojiPicker value={selectedEmojis} onChange={setSelectedEmojis} />
 
-      {/* CTA SAFE — pas de <button> */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={generate}
-        onKeyDown={(e) => e.key === "Enter" && generate()}
+      <button
+        type="submit"
+        disabled={selectedEmojis.length !== 3}
         style={{
           marginTop: 24,
           padding: "14px 28px",
-          background: "#111",
+          background: selectedEmojis.length === 3 ? "#111" : "#444",
           color: "white",
           borderRadius: 14,
           fontSize: 18,
-          cursor: "pointer",
+          cursor: selectedEmojis.length === 3 ? "pointer" : "not-allowed",
           display: "inline-block",
           userSelect: "none",
+          border: "none",
+          opacity: selectedEmojis.length === 3 ? 1 : 0.7,
         }}
       >
         Entrer
-      </div>
+      </button>
 
       <pre style={{ marginTop: 12 }}>
         {JSON.stringify(selectedEmojis)}
       </pre>
-    </div>
+    </form>
   );
 }

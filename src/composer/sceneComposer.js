@@ -51,6 +51,10 @@ export function composeScene({ assets, climate, seed }) {
   const music = pickOne(musicPool, rand);
   if (!music) throw new Error("No music for climate " + climate);
 
+  if (!videoPool.length) {
+    throw new Error("No video for climate " + climate);
+  }
+
   const duration = music.duration || 180;
 
   const videos = pickMany(videoPool, 1 + Math.floor(rand() * 2), rand).map(
