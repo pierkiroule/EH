@@ -26,6 +26,7 @@ export default function Experience() {
   const [emojis, setEmojis] = useState([]);
   const [status, setStatus] = useState("idle"); // idle | loading | informed
   const [info, setInfo] = useState(null);
+  const isReady = emojis.length === 3 && status === "idle";
 
   /* ---------- LOAD GRAPH ---------- */
 
@@ -87,7 +88,14 @@ export default function Experience() {
   /* ---------- UI ---------- */
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#000" }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "#000",
+        color: "#fff",
+      }}
+    >
       {/* 🌌 FOND — GRAPH */}
       <div
         style={{
@@ -112,46 +120,58 @@ export default function Experience() {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 16,
+          gap: 14,
           background:
             "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.2), transparent)",
         }}
       >
-        {/* 🃏 CARTE EMOJIS */}
+        {/* 🃏 CARTE EMOJIS — zone consciente, compacte et lisible */}
         <div
           style={{
-            background: "rgba(0,0,0,0.6)",
+            width: "min(420px, 100%)",
+            background: "rgba(10,10,12,0.72)",
             backdropFilter: "blur(10px)",
             borderRadius: 22,
             padding: "18px 22px",
             boxShadow: "0 20px 50px rgba(0,0,0,0.6)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            transition: "transform 350ms ease, box-shadow 350ms ease",
+            transform: status === "loading" ? "scale(0.99)" : "scale(1)",
           }}
         >
           <EmojiPicker value={emojis} onChange={setEmojis} />
 
+          {/* Feedback clair : progression douce et rassurante */}
           <div
             style={{
               marginTop: 10,
-              fontSize: 13,
-              opacity: 0.75,
+              fontSize: 13.5,
+              opacity: 0.8,
               textAlign: "center",
-              color: "#fff",
+              color: "rgba(255,255,255,0.9)",
+              letterSpacing: 0.2,
             }}
           >
-            {emojis.length}/3 symboles choisis
+            {emojis.length} / 3 émojis choisis
           </div>
         </div>
 
-        {/* 🌱 FEEDBACK */}
+        {/* 🌱 FEEDBACK — confirmation légère, sans rupture */}
         {status === "informed" && info && (
           <div
             style={{
-              padding: 14,
+              width: "min(420px, 100%)",
+              padding: "14px 16px",
               borderRadius: 16,
               background: "rgba(255,255,255,0.08)",
-              fontSize: 14,
+              fontSize: 14.5,
               textAlign: "center",
               color: "#fff",
+              border: "1px solid rgba(255,255,255,0.12)",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
+              transition: "opacity 350ms ease, transform 350ms ease",
+              opacity: 1,
+              transform: "translateY(0)",
             }}
           >
             🌱 Ton tirage nourrit l’inconscient collectif
@@ -161,26 +181,29 @@ export default function Experience() {
           </div>
         )}
 
-        {/* 🚪 ENTRER */}
+        {/* 🚪 ENTRER — passage clair, état lisible */}
         <button
           onClick={handleEnter}
-          disabled={emojis.length !== 3 || status !== "idle"}
+          disabled={!isReady}
           style={{
             marginTop: 6,
+            minWidth: 220,
             padding: "14px 40px",
             borderRadius: 30,
             fontSize: 18,
-            background:
-              emojis.length === 3 && status === "idle"
-                ? "#fff"
-                : "#333",
-            color: "#000",
+            background: isReady
+              ? "linear-gradient(135deg, #ffffff, #d7e0ff)"
+              : "rgba(255,255,255,0.18)",
+            color: isReady ? "#0a0a0a" : "rgba(255,255,255,0.7)",
             border: "none",
-            cursor:
-              emojis.length === 3 && status === "idle"
-                ? "pointer"
-                : "not-allowed",
+            cursor: isReady ? "pointer" : "not-allowed",
             opacity: status === "loading" ? 0.6 : 1,
+            transition:
+              "transform 200ms ease, box-shadow 200ms ease, opacity 200ms ease",
+            boxShadow: isReady
+              ? "0 12px 30px rgba(120,140,255,0.35)"
+              : "none",
+            transform: isReady ? "translateY(0)" : "translateY(1px)",
           }}
         >
           {status === "loading" ? "…" : "Entrer"}
