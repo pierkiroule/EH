@@ -15,7 +15,7 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
     if (!ref.current || nodes.length === 0) return;
 
     const width = ref.current.clientWidth || 360;
-    const height = 420;
+    const height = ref.current.clientHeight || 520;
 
     d3.select(ref.current).selectAll("*").remove();
 
@@ -24,8 +24,9 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
       .append("svg")
       .attr("width", width)
       .attr("height", height)
+      .attr("viewBox", `0 0 ${width} ${height}`)
       .style("background", "#000")
-      .style("opacity", 0.35); // 🌫 fond respirant
+      .style("opacity", 0.5); // 🌫 fond respirant
 
     const safeNodes = nodes.map((n) => ({
       ...n,
@@ -44,8 +45,8 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
         d3
           .forceLink(safeLinks)
           .id((d) => d.id)
-          .distance(90)
-          .strength((d) => Math.min((d.value || 1) / 10, 0.6))
+          .distance(120)
+          .strength((d) => Math.min((d.value || 1) / 12, 0.5))
       )
       .force("charge", d3.forceManyBody().strength(-220))
       .force("center", d3.forceCenter(width / 2, height / 2))
@@ -56,8 +57,9 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
 
     const link = svg
       .append("g")
-      .attr("stroke", "#666")
-      .attr("stroke-opacity", 0.25)
+      .attr("stroke", "#8b8f9a")
+      .attr("stroke-opacity", 0.5)
+      .attr("stroke-linecap", "round")
       .selectAll("line")
       .data(safeLinks)
       .join("line")
@@ -132,9 +134,9 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
       ref={ref}
       style={{
         width: "100%",
-        maxWidth: 640,
+        height: "100%",
         margin: "0 auto",
-        pointerEvents: "none", // 🌌 contemplation only
+        pointerEvents: "auto", // 🌌 graph vivant
       }}
     />
   );

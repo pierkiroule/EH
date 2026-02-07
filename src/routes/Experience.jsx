@@ -102,7 +102,7 @@ export default function Experience() {
           position: "absolute",
           inset: 0,
           zIndex: 0,
-          pointerEvents: "none",
+          pointerEvents: "auto",
         }}
       >
         <EmojiGraph nodes={graphNodes} links={graphLinks} />
