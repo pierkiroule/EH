@@ -3,6 +3,10 @@ import Experience from "./routes/Experience.jsx";
 import Scene from "./routes/Scene.jsx";
 import Admin from "./routes/Admin.jsx";
 
+/**
+ * App — Router minimal EchoHypno
+ * HashRouter = safe mobile / Vercel / file://
+ */
 export default function App() {
   return (
     <HashRouter>

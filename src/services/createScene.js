@@ -6,17 +6,17 @@ import {
 import { composeScene } from "../composer/sceneComposer";
 
 /**
- * Create ONE scene from exactly 3 emojis
- * - conforme à la base existante
- * - robuste (fallbacks)
+ * Create ONE unique scene from a triad of emojis
+ * - UX non bloquante
+ * - mémoire collective en arrière-plan
  */
 export async function createScene({ emojis }) {
   if (!Array.isArray(emojis) || emojis.length !== 3) {
     throw new Error("createScene requires exactly 3 emojis");
   }
 
-  /* ---------- 1. créer le triad ---------- */
-  const { data: triad, error: triadError } = await supabase
+  /* ---------- TRIAD ---------- */
+  const { data: triad, error: e1 } = await supabase
     .from("triads")
     .insert({
       emoji_1: emojis[0],
@@ -26,62 +26,77 @@ export async function createScene({ emojis }) {
     .select()
     .single();
 
-  if (triadError) {
-    throw new Error(triadError.message);
+  if (e1) throw e1;
+
+  /* ---------- MEMORY (NON BLOQUANT) ---------- */
+  try {
+    const emojiCalls = emojis.map((emoji) =>
+      supabase.rpc("increment_emoji_stat", { p_emoji: emoji })
+    );
+
+    const pairs = [
+      [emojis[0], emojis[1]],
+      [emojis[0], emojis[2]],
+      [emojis[1], emojis[2]],
+    ];
+
+    const pairCalls = pairs.map(([a, b]) =>
+      supabase.rpc("increment_emoji_cooccurrence", {
+        p_source: a,
+        p_target: b,
+      })
+    );
+
+    Promise.all([...emojiCalls, ...pairCalls]).catch(() => {});
+  } catch {
+    // silence volontaire
   }
 
-  /* ---------- 2. récupérer les poids climat ---------- */
-  const { data: weights, error: weightsError } = await supabase
+  /* ---------- CLIMATE ---------- */
+  const { data: weights } = await supabase
     .from("emoji_climate_weights")
     .select("climate, weight")
     .in("emoji", emojis);
 
-  if (weightsError) {
-    throw new Error(weightsError.message);
-  }
+  const climateVector =
+    weights && weights.length
+      ? computeClimateVector(weights)
+      : { calm: 1, deep: 0, luminous: 0, tense: 0, contrast: 0 };
 
-  const climateVector = computeClimateVector(weights || []);
-  const climate =
-    dominantClimate(climateVector) || "calm";
+  const climate = dominantClimate(climateVector);
 
-  /* ---------- 3. charger le catalogue média ---------- */
-  const { data: assets, error: assetsError } = await supabase
+  /* ---------- ASSETS ---------- */
+  const { data: assets, error: e3 } = await supabase
     .from("media_assets")
     .select("*")
     .eq("enabled", true);
 
-  if (assetsError) {
-    throw new Error(assetsError.message);
-  }
+  if (e3) throw e3;
 
-  if (!assets || assets.length === 0) {
-    throw new Error("No media assets available");
-  }
+  /* ---------- COMPOSE ---------- */
+  const seed = Date.now() + Math.random();
 
-  /* ---------- 4. composer la scène ---------- */
   const sceneDescriptor = composeScene({
     assets,
     climate,
+    seed,
   });
 
-  if (!sceneDescriptor) {
-    throw new Error("composeScene returned null");
-  }
-
-  /* ---------- 5. persister la scène ---------- */
-  const { data: scene, error: sceneError } = await supabase
+  /* ---------- SAVE SCENE ---------- */
+  const { data: scene, error: e4 } = await supabase
     .from("scenes")
     .insert({
       triad_id: triad.id,
       climate_vector: climateVector,
-      scene_descriptor: sceneDescriptor,
+      scene_descriptor: {
+        ...sceneDescriptor,
+        seed,
+      },
     })
     .select()
     .single();
 
-  if (sceneError) {
-    throw new Error(sceneError.message);
-  }
+  if (e4) throw e4;
 
   return scene;
 }

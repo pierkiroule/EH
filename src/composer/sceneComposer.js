@@ -1,12 +1,7 @@
 /**
  * Scene Composer — V1 BLINDÉ
- * - jamais de blocage
- * - fallback intelligent
- * - compatible mobile
- * - aligné schema Supabase
+ * jamais bloquant
  */
-
-/* ------------------ utils ------------------ */
 
 function pickOne(list) {
   if (!list || list.length === 0) return null;
@@ -15,89 +10,41 @@ function pickOne(list) {
 
 function pickMany(list, max = 1) {
   if (!list || list.length === 0) return [];
-  const shuffled = [...list].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, max);
+  return [...list].sort(() => 0.5 - Math.random()).slice(0, max);
 }
 
 function spreadOver(items, duration, minGap = 20) {
   if (!items || items.length === 0) return [];
-
   const step = Math.max(minGap, duration / (items.length + 1));
-
   return items.map((item, i) => ({
     ...item,
     start: Math.round((i + 1) * step),
   }));
 }
 
-/* ------------------ composer ------------------ */
-
 export function composeScene({ assets, climate }) {
   if (!assets || assets.length === 0) {
-    throw new Error("No media assets provided");
+    throw new Error("No media assets");
   }
 
-  /* ---------- MUSIC (maîtresse) ---------- */
+  /* MUSIC */
+  let music =
+    pickOne(assets.filter(a => a.category === "music" && a.climate === climate && a.enabled)) ||
+    pickOne(assets.filter(a => a.category === "music" && a.enabled));
 
-  const musicPrimary = assets.filter(
-    (a) =>
-      a.category === "music" &&
-      a.climate === climate &&
-      a.enabled
-  );
+  if (!music) throw new Error("No music available");
 
-  let music = pickOne(musicPrimary);
-
-  // 🔥 FALLBACK 1 — calm
-  if (!music) {
-    const calmPool = assets.filter(
-      (a) =>
-        a.category === "music" &&
-        a.climate === "calm" &&
-        a.enabled
-    );
-    music = pickOne(calmPool);
-  }
-
-  // 🔥 FALLBACK 2 — any music
-  if (!music) {
-    const anyMusic = assets.filter(
-      (a) =>
-        a.category === "music" &&
-        a.enabled
-    );
-    music = pickOne(anyMusic);
-  }
-
-  if (!music) {
-    throw new Error("No music available in media_assets");
-  }
-
-  // V1 durée fixe (simplification volontaire)
   const duration = 180;
 
-  /* ---------- VIDEO ---------- */
+  /* VIDEO */
+  let videos =
+    pickMany(assets.filter(a => a.category === "video" && a.climate === climate && a.enabled), 1);
 
-  const videoPrimary = assets.filter(
-    (a) =>
-      a.category === "video" &&
-      a.climate === climate &&
-      a.enabled
-  );
-
-  let videos = pickMany(videoPrimary, 1);
-
-  // fallback vidéo
   if (videos.length === 0) {
-    const anyVideo = assets.filter(
-      (a) =>
-        a.category === "video" &&
-        a.enabled
-    );
-    videos = pickMany(anyVideo, 1);
+    videos = pickMany(assets.filter(a => a.category === "video" && a.enabled), 1);
   }
 
-  videos = videos.map((v) => ({
+  videos = videos.map(v => ({
     id: v.id,
     path: v.path,
     start: 0,
@@ -106,29 +53,16 @@ export function composeScene({ assets, climate }) {
     blend: "normal",
   }));
 
-  /* ---------- VOICES ---------- */
+  /* VOICES */
+  let voicesRaw =
+    pickMany(assets.filter(a => a.category === "voice" && a.climate === climate && a.enabled), 3);
 
-  const voicePrimary = assets.filter(
-    (a) =>
-      a.category === "voice" &&
-      a.climate === climate &&
-      a.enabled
-  );
-
-  let voicesRaw = pickMany(voicePrimary, 3);
-
-  // fallback voix
   if (voicesRaw.length === 0) {
-    const anyVoice = assets.filter(
-      (a) =>
-        a.category === "voice" &&
-        a.enabled
-    );
-    voicesRaw = pickMany(anyVoice, 2);
+    voicesRaw = pickMany(assets.filter(a => a.category === "voice" && a.enabled), 2);
   }
 
   const voices = spreadOver(
-    voicesRaw.map((v) => ({
+    voicesRaw.map(v => ({
       id: v.id,
       path: v.path,
       gain: 0.6,
@@ -136,26 +70,12 @@ export function composeScene({ assets, climate }) {
     duration
   );
 
-  /* ---------- FX ---------- */
-
-  const fx = [
-    {
-      type: "particles",
-      preset: climate || "calm",
-    },
-  ];
-
-  /* ---------- FINAL DESCRIPTOR ---------- */
-
   return {
     duration,
     climate,
-    music: {
-      id: music.id,
-      path: music.path,
-    },
+    music: { id: music.id, path: music.path },
     videos,
     voices,
-    fx,
+    fx: [{ type: "particles", preset: climate || "calm" }],
   };
 }

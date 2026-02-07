@@ -1,5 +1,5 @@
 /**
- * Compute normalized climate vector
+ * Compute normalized climate vector from emoji_climate_weights
  */
 
 export function computeClimateVector(weights) {
@@ -11,7 +11,7 @@ export function computeClimateVector(weights) {
     contrast: 0,
   };
 
-  for (const w of weights) {
+  for (const w of weights || []) {
     if (vector[w.climate] !== undefined) {
       vector[w.climate] += Number(w.weight);
     }
