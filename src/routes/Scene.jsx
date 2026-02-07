@@ -59,6 +59,16 @@ export default function Scene() {
   useEffect(() => {
     if (!descriptor || !mountRef.current) return;
 
+    if (!descriptor.videos || descriptor.videos.length === 0) {
+      setError("Aucune vidéo disponible pour cette scène.");
+      return;
+    }
+
+    if (!descriptor.music?.path) {
+      setError("Musique manquante pour cette scène.");
+      return;
+    }
+
     const mount = mountRef.current;
 
     /* --- renderer --- */
