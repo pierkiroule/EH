@@ -14,6 +14,7 @@ export default function Experience() {
   const [selected, setSelected] = useState([]);
   const [meteo, setMeteo] = useState(null);
   const [isEntering, setIsEntering] = useState(false);
+  const [enterError, setEnterError] = useState(null);
 
   /* ---------- LOAD GRAPH ---------- */
   useEffect(() => {
@@ -68,11 +69,15 @@ export default function Experience() {
   async function enter() {
     if (selected.length !== 3 || isEntering) return;
     setIsEntering(true);
+    setEnterError(null);
     try {
       const scene = await createScene({ emojis: selected });
       navigate(`/scene/${scene.id}`);
     } catch (error) {
       console.error("Impossible de traverser le paysage:", error);
+      setEnterError(
+        "Impossible de lancer la scène pour le moment. Réessaie dans un instant."
+      );
     } finally {
       setIsEntering(false);
     }
@@ -126,6 +131,19 @@ export default function Experience() {
       >
         {isEntering ? "Traversée en cours..." : "Traverser le paysage"}
       </button>
+      {enterError && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 8,
+            color: "#ffb4b4",
+            fontSize: 13,
+            textAlign: "center",
+          }}
+        >
+          {enterError}
+        </div>
+      )}
     </div>
   );
 }
