@@ -31,7 +31,8 @@ export default function EmojiGraph({
       .append("svg")
       .attr("width", width)
       .attr("height", height)
-      .style("background", "#000");
+      .style("background", "#000")
+      .style("pointer-events", "none");
 
     /* ---------- NORMALISATION ---------- */
     const maxOcc =
@@ -87,6 +88,7 @@ export default function EmojiGraph({
     /* ---------- NOEUDS ---------- */
     const node = svg
       .append("g")
+      .style("pointer-events", "auto")
       .selectAll("g")
       .data(safeNodes)
       .join("g")
