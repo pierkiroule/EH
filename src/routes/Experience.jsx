@@ -13,6 +13,7 @@ export default function Experience() {
   const [links, setLinks] = useState([]);
   const [selected, setSelected] = useState([]);
   const [meteo, setMeteo] = useState(null);
+  const [isEntering, setIsEntering] = useState(false);
 
   /* ---------- LOAD GRAPH ---------- */
   useEffect(() => {
@@ -65,9 +66,16 @@ export default function Experience() {
   }
 
   async function enter() {
-    if (selected.length !== 3) return;
-    const scene = await createScene({ emojis: selected });
-    navigate(`/scene/${scene.id}`);
+    if (selected.length !== 3 || isEntering) return;
+    setIsEntering(true);
+    try {
+      const scene = await createScene({ emojis: selected });
+      navigate(`/scene/${scene.id}`);
+    } catch (error) {
+      console.error("Impossible de traverser le paysage:", error);
+    } finally {
+      setIsEntering(false);
+    }
   }
 
   return (
@@ -99,19 +107,24 @@ export default function Experience() {
       {/* 🚪 ACTION */}
       <button
         onClick={enter}
-        disabled={selected.length !== 3}
+        disabled={selected.length !== 3 || isEntering}
         style={{
           marginTop: 8,
           padding: "14px",
           borderRadius: 28,
           fontSize: 18,
           border: "none",
-          background: selected.length === 3 ? "#fff" : "#333",
-          color: "#000",
-          opacity: selected.length === 3 ? 1 : 0.5,
+          background:
+            selected.length === 3 && !isEntering ? "#fff" : "#333",
+          color: selected.length === 3 ? "#000" : "#999",
+          cursor:
+            selected.length === 3 && !isEntering
+              ? "pointer"
+              : "not-allowed",
+          opacity: selected.length === 3 && !isEntering ? 1 : 0.7,
         }}
       >
-        Traverser le paysage
+        {isEntering ? "Traversée en cours..." : "Traverser le paysage"}
       </button>
     </div>
   );
