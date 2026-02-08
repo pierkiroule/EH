@@ -1,25 +1,56 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-/* ================= CONSTANTES ================= */
+/* ================== CONFIG ================== */
 
+const BUCKET = "scenes-media";
 const CLIMATES = ["calm", "deep", "luminous", "tense", "contrast"];
 const PRESETS = ["Config 1", "Config 2", "Config 3"];
 
-/* ================= ADMIN ================= */
+/* ================== HELPERS ================== */
+
+function inferCategory(path) {
+  if (path.startsWith("music/")) return "music";
+  if (path.startsWith("video/")) return "video";
+  if (path.startsWith("voice/")) return "voice";
+  if (path.startsWith("text/")) return "text";
+  if (path.startsWith("shader/")) return "shader";
+  return "text";
+}
+
+/* Scan récursif du bucket (OBLIGATOIRE) */
+async function listAllFiles(prefix = "") {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .list(prefix);
+
+  if (error || !data) return [];
+
+  let files = [];
+
+  for (const item of data) {
+    if (item.name.endsWith("/")) continue;
+
+    if (item.metadata) {
+      files.push(prefix + item.name);
+    } else {
+      const sub = await listAllFiles(prefix + item.name + "/");
+      files.push(...sub);
+    }
+  }
+
+  return files;
+}
+
+/* ================== COMPONENT ================== */
 
 export default function Admin() {
   const [rows, setRows] = useState([]);
+  const [bucketFiles, setBucketFiles] = useState([]);
   const [configs, setConfigs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
-
-  /* ---- nourrissage ---- */
-  const [allEmojis, setAllEmojis] = useState([]);
-  const [triad, setTriad] = useState([]);
-  const [injectCount, setInjectCount] = useState(10);
-  const [injectStatus, setInjectStatus] = useState("");
 
   /* ================= LOAD ================= */
 
@@ -52,22 +83,33 @@ export default function Admin() {
     setConfigs(data || []);
   }
 
-  async function loadEmojis() {
-    const { data } = await supabase
-      .from("emoji_poles")
-      .select("emoji")
-      .eq("active", true);
-
-    setAllEmojis(data || []);
+  async function loadBucket() {
+    const files = await listAllFiles();
+    setBucketFiles(files);
   }
 
   useEffect(() => {
     loadAssets();
     loadConfigs();
-    loadEmojis();
+    loadBucket();
   }, []);
 
   /* ================= DERIVED ================= */
+
+  const basePaths = useMemo(
+    () => new Set(rows.map((r) => r.path)),
+    [rows]
+  );
+
+  const bucketOrphans = useMemo(
+    () => bucketFiles.filter((p) => !basePaths.has(p)),
+    [bucketFiles, basePaths]
+  );
+
+  const logicalOrphans = useMemo(
+    () => rows.filter((r) => !CLIMATES.includes(r.climate)),
+    [rows]
+  );
 
   const byClimate = useMemo(() => {
     const map = {};
@@ -78,12 +120,7 @@ export default function Admin() {
     return map;
   }, [rows]);
 
-  const orphans = useMemo(
-    () => rows.filter((r) => !CLIMATES.includes(r.climate)),
-    [rows]
-  );
-
-  /* ================= PATCH MEDIA ================= */
+  /* ================= ACTIONS ================= */
 
   async function patchAsset(id, patch) {
     setSavingId(id);
@@ -106,6 +143,29 @@ export default function Admin() {
     setSavingId(null);
   }
 
+  async function importFromBucket(path) {
+  // ignore placeholders Supabase
+  if (path.includes(".emptyFolderPlaceholder")) return;
+
+  const { error } = await supabase
+    .from("media_assets")
+    .insert({
+      path,
+      category: inferCategory(path),
+      climate: "calm",          // valeur par défaut
+      energy: 0.5,              // 🔧 FIX NOT NULL
+      role: "background",       // 🔧 FIX NOT NULL
+      enabled: false,
+    });
+
+  if (error) {
+    setError(error.message);
+    return;
+  }
+
+  await loadAssets();
+}
+
   /* ================= CONFIGS ================= */
 
   async function saveConfig(name) {
@@ -119,13 +179,11 @@ export default function Admin() {
     loadConfigs();
   }
 
-  async function loadConfig(configId) {
-    if (!configId) return;
-
+  async function loadConfig(id) {
     const { data } = await supabase
       .from("admin_configs")
       .select("snapshot")
-      .eq("id", configId)
+      .eq("id", id)
       .single();
 
     if (!data?.snapshot) return;
@@ -140,58 +198,7 @@ export default function Admin() {
     loadAssets();
   }
 
-  /* ================= NOURRISSAGE ================= */
-
-  const toggleEmoji = (emoji) => {
-    if (triad.includes(emoji)) {
-      setTriad(triad.filter((e) => e !== emoji));
-      return;
-    }
-    if (triad.length >= 3) return;
-    setTriad([...triad, emoji]);
-  };
-
-  async function injectPassages() {
-    if (triad.length !== 3) return;
-
-    setInjectStatus("⏳ injection…");
-
-    const pairs = [
-      [triad[0], triad[1]],
-      [triad[0], triad[2]],
-      [triad[1], triad[2]],
-    ];
-
-    try {
-      for (let i = 0; i < injectCount; i++) {
-        for (const e of triad) {
-          await supabase.from("emoji_collective_stats").upsert(
-            { emoji: e, occurrences: 1 },
-            { onConflict: "emoji" }
-          );
-        }
-
-        for (const [a, b] of pairs) {
-          await supabase.from("emoji_cooccurrences").upsert(
-            {
-              emoji_source: a,
-              emoji_target: b,
-              occurrences: 1,
-            },
-            { onConflict: "emoji_source,emoji_target" }
-          );
-        }
-      }
-
-      setInjectStatus(`✅ ${injectCount} passages injectés`);
-      setTriad([]);
-    } catch (e) {
-      console.error(e);
-      setInjectStatus("❌ erreur injection");
-    }
-  }
-
-  /* ================= UI HELPERS ================= */
+  /* ================= UI ================= */
 
   const AssetRow = ({ a }) => (
     <div
@@ -199,25 +206,25 @@ export default function Admin() {
         padding: 10,
         borderRadius: 10,
         background: "rgba(255,255,255,0.05)",
-        border: "1px solid rgba(255,255,255,0.1)",
+        border: "1px solid rgba(255,255,255,0.12)",
         display: "flex",
         gap: 8,
-        flexWrap: "wrap",
         alignItems: "center",
+        flexWrap: "wrap",
       }}
     >
       <span style={{ fontSize: 12, opacity: 0.7 }}>[{a.category}]</span>
       <span style={{ fontSize: 13, wordBreak: "break-all" }}>{a.path}</span>
 
-      <label style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-        <span style={{ fontSize: 12 }}>actif</span>
+      <label style={{ marginLeft: "auto" }}>
         <input
           type="checkbox"
           checked={!!a.enabled}
           onChange={(e) =>
             patchAsset(a.id, { enabled: e.target.checked })
           }
-        />
+        />{" "}
+        actif
       </label>
 
       <select
@@ -225,14 +232,6 @@ export default function Admin() {
         onChange={(e) =>
           patchAsset(a.id, { climate: e.target.value })
         }
-        style={{
-          background: "rgba(255,255,255,0.06)",
-          color: "white",
-          border: "1px solid rgba(255,255,255,0.2)",
-          borderRadius: 8,
-          padding: "4px 8px",
-          fontSize: 12,
-        }}
       >
         <option value="">— climat —</option>
         {CLIMATES.map((c) => (
@@ -248,36 +247,6 @@ export default function Admin() {
     </div>
   );
 
-  const ClimateBlock = ({ climate }) => {
-    const items = byClimate[climate].filter((a) => a.enabled);
-
-    return (
-      <div
-        style={{
-          border: "1px solid rgba(255,255,255,0.15)",
-          borderRadius: 14,
-          padding: 12,
-        }}
-      >
-        <div style={{ fontSize: 16, marginBottom: 8 }}>
-          {climate.toUpperCase()} · {items.length}
-        </div>
-
-        {items.length === 0 ? (
-          <div style={{ opacity: 0.6, fontSize: 13 }}>
-            Aucun média actif
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {items.map((a) => (
-              <AssetRow key={a.id} a={a} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   /* ================= RENDER ================= */
 
   return (
@@ -289,178 +258,55 @@ export default function Admin() {
         padding: 16,
       }}
     >
-      {/* HEADER */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ fontSize: 18 }}>ADMIN · Climats & Nourrissage</div>
-        <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>
-          {loading ? "loading…" : `${rows.length} médias`}
-        </div>
-      </div>
+      <h2>ADMIN · Médias & Bucket</h2>
 
-      {/* PRESETS */}
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        {PRESETS.map((name) => (
-          <button
-            key={name}
-            onClick={() => saveConfig(name)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.2)",
-              background: "rgba(255,255,255,0.06)",
-              color: "white",
-            }}
-          >
-            Sauver {name}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {PRESETS.map((p) => (
+          <button key={p} onClick={() => saveConfig(p)}>
+            Sauver {p}
           </button>
         ))}
 
-        <select
-          onChange={(e) => loadConfig(e.target.value)}
-          defaultValue=""
-          style={{
-            marginLeft: "auto",
-            background: "rgba(255,255,255,0.06)",
-            color: "white",
-            border: "1px solid rgba(255,255,255,0.2)",
-            borderRadius: 10,
-            padding: "8px 12px",
-          }}
-        >
+        <select onChange={(e) => loadConfig(e.target.value)}>
           <option value="">Charger config…</option>
           {configs.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} · {new Date(c.created_at).toLocaleString()}
+              {c.name}
             </option>
           ))}
         </select>
       </div>
 
-      {/* ERROR */}
-      {error && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 12,
-            background: "rgba(255,0,0,0.15)",
-            fontSize: 13,
-          }}
-        >
-          ❌ {error}
-        </div>
+      {error && <div style={{ color: "red" }}>❌ {error}</div>}
+      {loading && <div>loading…</div>}
+
+      {/* BUCKET ORPHANS */}
+      <h3>🪣 Fichiers dans le bucket non déclarés ({bucketOrphans.length})</h3>
+      {bucketOrphans.length === 0 && (
+        <div style={{ opacity: 0.6 }}>Aucun</div>
       )}
+      {bucketOrphans.map((p) => (
+        <div key={p} style={{ display: "flex", gap: 10 }}>
+          <span>{p}</span>
+          <button onClick={() => importFromBucket(p)}>Importer</button>
+        </div>
+      ))}
+
+      {/* LOGICAL ORPHANS */}
+      <h3>⚠️ Médias sans climat ({logicalOrphans.length})</h3>
+      {logicalOrphans.map((a) => (
+        <AssetRow key={a.id} a={a} />
+      ))}
 
       {/* CLIMATES */}
-      <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
-        {CLIMATES.map((c) => (
-          <ClimateBlock key={c} climate={c} />
-        ))}
-
-        {/* ORPHANS */}
-        <div
-          style={{
-            border: "1px dashed rgba(255,255,255,0.3)",
-            borderRadius: 14,
-            padding: 12,
-          }}
-        >
-          <div style={{ fontSize: 16, marginBottom: 8 }}>
-            ⚠️ ORPHELINS · {orphans.length}
-          </div>
-
-          {orphans.length === 0 ? (
-            <div style={{ opacity: 0.6, fontSize: 13 }}>
-              Aucun média orphelin
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {orphans.map((a) => (
-                <AssetRow key={a.id} a={a} />
-              ))}
-            </div>
-          )}
+      {CLIMATES.map((c) => (
+        <div key={c}>
+          <h3>{c.toUpperCase()}</h3>
+          {byClimate[c].map((a) => (
+            <AssetRow key={a.id} a={a} />
+          ))}
         </div>
-      </div>
-
-      {/* NOURRISSAGE */}
-      <div
-        style={{
-          marginTop: 24,
-          padding: 16,
-          borderRadius: 16,
-          border: "1px solid rgba(255,255,255,0.25)",
-        }}
-      >
-        <div style={{ fontSize: 16, marginBottom: 10 }}>
-          🧠 Nourrir le paysage collectif
-        </div>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {allEmojis.map(({ emoji }) => {
-            const active = triad.includes(emoji);
-            return (
-              <button
-                key={emoji}
-                onClick={() => toggleEmoji(emoji)}
-                style={{
-                  fontSize: 22,
-                  padding: 8,
-                  borderRadius: 10,
-                  background: active ? "#fff" : "#222",
-                  color: active ? "#000" : "#fff",
-                  border: "1px solid rgba(255,255,255,0.3)",
-                }}
-              >
-                {emoji}
-              </button>
-            );
-          })}
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <label>
-            Passages :
-            <input
-              type="number"
-              min="1"
-              max="100"
-              value={injectCount}
-              onChange={(e) => setInjectCount(Number(e.target.value))}
-              style={{
-                marginLeft: 8,
-                width: 80,
-                background: "#111",
-                color: "white",
-                border: "1px solid #333",
-              }}
-            />
-          </label>
-        </div>
-
-        <button
-          onClick={injectPassages}
-          disabled={triad.length !== 3}
-          style={{
-            marginTop: 12,
-            padding: "10px 20px",
-            borderRadius: 12,
-            background: triad.length === 3 ? "#fff" : "#555",
-            color: "#000",
-            border: "none",
-            cursor:
-              triad.length === 3 ? "pointer" : "not-allowed",
-          }}
-        >
-          Injecter
-        </button>
-
-        {injectStatus && (
-          <div style={{ marginTop: 8, fontSize: 13 }}>
-            {injectStatus}
-          </div>
-        )}
-      </div>
+      ))}
     </div>
   );
 }
