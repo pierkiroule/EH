@@ -1,4 +1,5 @@
 import { HashRouter, Routes, Route } from "react-router-dom";
+import Home from "./routes/Home.jsx";
 import Experience from "./routes/Experience.jsx";
 import Scene from "./routes/Scene.jsx";
 import Admin from "./routes/Admin.jsx";
@@ -11,7 +12,8 @@ export default function App() {
   return (
     <HashRouter>
       <Routes>
-        <Route path="/" element={<Experience />} />
+        <Route path="/" element={<Home />} />
+        <Route path="/experience" element={<Experience />} />
         <Route path="/scene/:id" element={<Scene />} />
         <Route path="/admin" element={<Admin />} />
       </Routes>
