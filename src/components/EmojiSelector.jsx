@@ -1,53 +1,37 @@
-import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
-
-export default function EmojiSelector({ value = [], onChange }) {
-  const [emojis, setEmojis] = useState([]);
-
-  useEffect(() => {
-    supabase
-      .from("emoji_poles")
-      .select("emoji")
-      .eq("active", true)
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("EMOJI LOAD ERROR", error);
-          return;
-        }
-        setEmojis(data || []);
-      });
-  }, []);
-
-  const toggle = (emoji) => {
-    if (value.includes(emoji)) {
-      onChange(value.filter((e) => e !== emoji));
-      return;
-    }
-    if (value.length >= 3) return;
-    onChange([...value, emoji]);
-  };
-
+export default function EmojiSelector({ value = [], onRemove }) {
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-      {emojis.map(({ emoji }) => {
-        const active = value.includes(emoji);
+    <div
+      style={{
+        display: "flex",
+        gap: 14,
+        justifyContent: "center",
+        marginTop: 8,
+      }}
+    >
+      {[0, 1, 2].map((i) => {
+        const emoji = value[i];
         return (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => toggle(emoji)}
+          <div
+            key={i}
+            onClick={() => emoji && onRemove(emoji)}
             style={{
-              fontSize: 26,
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #444",
-              background: active ? "#000" : "#eee",
-              color: active ? "#fff" : "#000",
-              cursor: "pointer",
+              width: 52,
+              height: 52,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.08)",
+              border: emoji
+                ? "2px solid #fff"
+                : "1px dashed rgba(255,255,255,0.3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 28,
+              cursor: emoji ? "pointer" : "default",
+              opacity: emoji ? 1 : 0.4,
             }}
           >
-            {emoji}
-          </button>
+            {emoji || "·"}
+          </div>
         );
       })}
     </div>

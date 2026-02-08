@@ -2,14 +2,20 @@ import { useEffect, useRef } from "react";
 import * as d3 from "d3";
 
 /**
- * EmojiGraph
- * - fond symbolique collectif
- * - toujours visible
- * - non intrusif
- * - draggable (ludique)
+ * EmojiGraph — Inconscient collectif
+ * - occ  → taille / opacité des noeuds
+ * - cooc → épaisseur / opacité des liens
+ * - stable (pas de resimulation à la sélection)
+ * - draggable
  */
-export default function EmojiGraph({ nodes = [], links = [] }) {
+export default function EmojiGraph({
+  nodes = [],
+  links = [],
+  selected = [],
+  onToggle = () => {},
+}) {
   const ref = useRef(null);
+  const simRef = useRef(null);
 
   useEffect(() => {
     if (!ref.current || nodes.length === 0) return;
@@ -19,24 +25,32 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
 
     d3.select(ref.current).selectAll("*").remove();
 
+    /* ---------- SVG ---------- */
     const svg = d3
       .select(ref.current)
       .append("svg")
       .attr("width", width)
       .attr("height", height)
-      .style("background", "#000")
-      .style("opacity", 0.35); // 🌫 fond respirant
+      .style("background", "#000");
+
+    /* ---------- NORMALISATION ---------- */
+    const maxOcc =
+      d3.max(nodes, (d) => d.occurrences || 1) || 1;
+    const maxCooc =
+      d3.max(links, (d) => d.value || 1) || 1;
 
     const safeNodes = nodes.map((n) => ({
       ...n,
-      size: n.size || 14,
+      occ: n.occurrences || 1,
+      r: 10 + (n.occurrences || 1) / maxOcc * 16,
     }));
 
     const safeLinks = links.map((l) => ({
       ...l,
-      value: l.value || 1,
+      w: l.value || 1,
     }));
 
+    /* ---------- SIMULATION (1 fois) ---------- */
     const simulation = d3
       .forceSimulation(safeNodes)
       .force(
@@ -45,26 +59,32 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
           .forceLink(safeLinks)
           .id((d) => d.id)
           .distance(90)
-          .strength((d) => Math.min((d.value || 1) / 10, 0.6))
+          .strength((d) => Math.min(d.w / maxCooc, 0.6))
       )
       .force("charge", d3.forceManyBody().strength(-220))
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force(
         "collision",
-        d3.forceCollide().radius((d) => d.size + 12)
+        d3.forceCollide().radius((d) => d.r + 10)
       );
 
+    simRef.current = simulation;
+
+    /* ---------- LIENS ---------- */
     const link = svg
       .append("g")
-      .attr("stroke", "#666")
-      .attr("stroke-opacity", 0.25)
       .selectAll("line")
       .data(safeLinks)
       .join("line")
+      .attr("stroke", "#888")
       .attr("stroke-width", (d) =>
-        Math.max(1, Math.sqrt(d.value || 1))
+        0.5 + (d.w / maxCooc) * 4
+      )
+      .attr("stroke-opacity", (d) =>
+        0.15 + (d.w / maxCooc) * 0.45
       );
 
+    /* ---------- NOEUDS ---------- */
     const node = svg
       .append("g")
       .selectAll("g")
@@ -76,24 +96,29 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
           .on("start", dragstarted)
           .on("drag", dragged)
           .on("end", dragended)
-      );
+      )
+      .on("click", (_, d) => onToggle(d.id));
 
     node
       .append("circle")
-      .attr("r", (d) => d.size)
-      .attr("fill", "#222")
-      .attr("stroke", "#aaa")
-      .attr("stroke-width", 1);
+      .attr("r", (d) => d.r)
+      .attr("fill", "#111")
+      .attr("stroke", "#fff")
+      .attr("stroke-width", 1.2)
+      .attr("opacity", (d) =>
+        0.4 + (d.occ / maxOcc) * 0.6
+      );
 
     node
       .append("text")
       .text((d) => d.id)
-      .attr("font-size", (d) => d.size + 8)
       .attr("text-anchor", "middle")
       .attr("dy", "0.35em")
-      .attr("pointer-events", "none")
-      .attr("fill", "#eee");
+      .attr("font-size", (d) => d.r + 6)
+      .attr("fill", "#fff")
+      .attr("pointer-events", "none");
 
+    /* ---------- TICK ---------- */
     simulation.on("tick", () => {
       link
         .attr("x1", (d) => d.source.x)
@@ -107,6 +132,7 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
       );
     });
 
+    /* ---------- DRAG ---------- */
     function dragstarted(event) {
       if (!event.active) simulation.alphaTarget(0.3).restart();
       event.subject.fx = event.subject.x;
@@ -125,16 +151,31 @@ export default function EmojiGraph({ nodes = [], links = [] }) {
     }
 
     return () => simulation.stop();
-  }, [nodes, links]);
+  }, [nodes, links, onToggle]);
+
+  /* ---------- SELECTION VISUELLE (SANS RELANCER SIM) ---------- */
+  useEffect(() => {
+    if (!ref.current) return;
+
+    d3.select(ref.current)
+      .selectAll("circle")
+      .attr("stroke", (d) =>
+        selected.includes(d.id) ? "#00ffd5" : "#fff"
+      )
+      .attr("stroke-width", (d) =>
+        selected.includes(d.id) ? 3 : 1.2
+      );
+  }, [selected]);
 
   return (
     <div
       ref={ref}
       style={{
         width: "100%",
-        maxWidth: 640,
+        maxWidth: 720,
+        height: 420,
         margin: "0 auto",
-        pointerEvents: "none", // 🌌 contemplation only
+        touchAction: "none",
       }}
     />
   );

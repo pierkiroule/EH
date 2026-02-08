@@ -1,191 +1,118 @@
-import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-
-import EmojiPicker from "../components/EmojiPicker";
 import EmojiGraph from "../components/EmojiGraph";
+import EmojiSelector from "../components/EmojiSelector";
+import ResoMeteo from "../components/ResoMeteo";
 import { createScene } from "../services/createScene";
-
-/* ---------- helpers ---------- */
-
-function dominantClimateFromVector(vector) {
-  if (!vector) return "calm";
-  const entries = Object.entries(vector);
-  if (!entries.length) return "calm";
-  return entries.sort((a, b) => b[1] - a[1])[0][0];
-}
-
-/* ---------- component ---------- */
 
 export default function Experience() {
   const navigate = useNavigate();
 
-  const [graphNodes, setGraphNodes] = useState([]);
-  const [graphLinks, setGraphLinks] = useState([]);
-
-  const [emojis, setEmojis] = useState([]);
-  const [status, setStatus] = useState("idle"); // idle | loading | informed
-  const [info, setInfo] = useState(null);
+  const [nodes, setNodes] = useState([]);
+  const [links, setLinks] = useState([]);
+  const [selected, setSelected] = useState([]);
+  const [meteo, setMeteo] = useState(null);
 
   /* ---------- LOAD GRAPH ---------- */
-
   useEffect(() => {
-    async function loadGraph() {
-      const { data: emojisData } = await supabase
+    async function load() {
+      const { data: emojis } = await supabase
         .from("emoji_poles")
-        .select("emoji")
-        .eq("active", true);
+        .select("emoji");
 
-      const nodes = (emojisData || []).map((e) => ({
-        id: e.emoji,
-        size: 16,
-      }));
-
-      const { data: linksRaw } = await supabase
+      const { data: cooc } = await supabase
         .from("emoji_cooccurrences")
         .select("emoji_source, emoji_target, weight");
 
-      const links = (linksRaw || []).map((l) => ({
-        source: l.emoji_source,
-        target: l.emoji_target,
-        value: l.weight || 1,
-      }));
+      setNodes(
+        (emojis || []).map((e) => ({
+          id: e.emoji,
+          size: 14,
+        }))
+      );
 
-      setGraphNodes(nodes);
-      setGraphLinks(links);
+      setLinks(
+        (cooc || []).map((c) => ({
+          source: c.emoji_source,
+          target: c.emoji_target,
+          value: c.weight || 1,
+        }))
+      );
+
+      setMeteo({
+        climate: "calm",
+        density: "faible",
+        tension: "diffuse",
+      });
     }
-
-    loadGraph();
+    load();
   }, []);
 
-  /* ---------- ACTION ---------- */
-
-  async function handleEnter() {
-    if (emojis.length !== 3 || status !== "idle") return;
-
-    setStatus("loading");
-
-    let scene;
-    try {
-      scene = await createScene({ emojis });
-    } catch (e) {
-      console.error("CREATE SCENE ERROR", e);
-      setStatus("idle");
-      return;
-    }
-
-    const climate = dominantClimateFromVector(scene.climate_vector);
-
-    setInfo({ emojis, climate });
-    setStatus("informed");
-
-    setTimeout(() => {
-      navigate(`/scene/${scene.id}`);
-    }, 1200);
+  /* ---------- SELECTION ---------- */
+  function toggleEmoji(emoji) {
+    setSelected((prev) => {
+      if (prev.includes(emoji)) {
+        return prev.filter((e) => e !== emoji);
+      }
+      if (prev.length >= 3) return prev;
+      return [...prev, emoji];
+    });
   }
 
-  /* ---------- UI ---------- */
+  function removeEmoji(emoji) {
+    setSelected((prev) => prev.filter((e) => e !== emoji));
+  }
+
+  async function enter() {
+    if (selected.length !== 3) return;
+    const scene = await createScene({ emojis: selected });
+    navigate(`/scene/${scene.id}`);
+  }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#000" }}>
-      {/* 🌌 FOND — GRAPH */}
-      <div
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#000",
+        color: "#fff",
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        padding: 16,
+      }}
+    >
+      {/* 🌌 GRAPH */}
+      <EmojiGraph
+        nodes={nodes}
+        links={links}
+        selected={selected}
+        onToggle={toggleEmoji}
+      />
+
+      {/* 🎯 SELECTEUR */}
+      <EmojiSelector value={selected} onRemove={removeEmoji} />
+
+      {/* 🌦 METEO */}
+      <ResoMeteo stats={meteo} />
+
+      {/* 🚪 ACTION */}
+      <button
+        onClick={enter}
+        disabled={selected.length !== 3}
         style={{
-          position: "absolute",
-          inset: 0,
-          zIndex: 0,
-          pointerEvents: "none",
+          marginTop: 8,
+          padding: "14px",
+          borderRadius: 28,
+          fontSize: 18,
+          border: "none",
+          background: selected.length === 3 ? "#fff" : "#333",
+          color: "#000",
+          opacity: selected.length === 3 ? 1 : 0.5,
         }}
       >
-        <EmojiGraph nodes={graphNodes} links={graphLinks} />
-      </div>
-
-      {/* 🧭 UI BAS */}
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 2,
-          padding: "20px 16px 28px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 16,
-          background:
-            "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.2), transparent)",
-        }}
-      >
-        {/* 🃏 CARTE EMOJIS */}
-        <div
-          style={{
-            background: "rgba(0,0,0,0.6)",
-            backdropFilter: "blur(10px)",
-            borderRadius: 22,
-            padding: "18px 22px",
-            boxShadow: "0 20px 50px rgba(0,0,0,0.6)",
-          }}
-        >
-          <EmojiPicker value={emojis} onChange={setEmojis} />
-
-          <div
-            style={{
-              marginTop: 10,
-              fontSize: 13,
-              opacity: 0.75,
-              textAlign: "center",
-              color: "#fff",
-            }}
-          >
-            {emojis.length}/3 symboles choisis
-          </div>
-        </div>
-
-        {/* 🌱 FEEDBACK */}
-        {status === "informed" && info && (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "rgba(255,255,255,0.08)",
-              fontSize: 14,
-              textAlign: "center",
-              color: "#fff",
-            }}
-          >
-            🌱 Ton tirage nourrit l’inconscient collectif
-            <div style={{ marginTop: 6, fontSize: 24 }}>
-              {info.emojis.join(" ")}
-            </div>
-          </div>
-        )}
-
-        {/* 🚪 ENTRER */}
-        <button
-          onClick={handleEnter}
-          disabled={emojis.length !== 3 || status !== "idle"}
-          style={{
-            marginTop: 6,
-            padding: "14px 40px",
-            borderRadius: 30,
-            fontSize: 18,
-            background:
-              emojis.length === 3 && status === "idle"
-                ? "#fff"
-                : "#333",
-            color: "#000",
-            border: "none",
-            cursor:
-              emojis.length === 3 && status === "idle"
-                ? "pointer"
-                : "not-allowed",
-            opacity: status === "loading" ? 0.6 : 1,
-          }}
-        >
-          {status === "loading" ? "…" : "Entrer"}
-        </button>
-      </div>
+        Traverser le paysage
+      </button>
     </div>
   );
 }
