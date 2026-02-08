@@ -3,16 +3,44 @@ import { useParams } from "react-router-dom";
 import * as THREE from "three";
 import { supabase } from "../lib/supabase";
 
-/* ------------------ CONFIG ------------------ */
+/* ================== CONFIG ================== */
 
 const BUCKET = "scenes-media";
 const BASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const DEBUG_MEDIA = true;
 
 function publicUrl(path) {
   return `${BASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
 }
 
-/* ------------------ SCENE ------------------ */
+/* ================== SHADERS ================== */
+
+const VERT = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+const FRAG_FALLBACK = `
+precision mediump float;
+uniform float uTime;
+uniform float uIntensity;
+uniform vec2 uResolution;
+varying vec2 vUv;
+
+void main() {
+  vec2 uv = vUv;
+  float d = distance(uv, vec2(0.5));
+  float glow = smoothstep(0.6, 0.2, d);
+  float pulse = 0.04 * sin(uTime * 0.8) * uIntensity;
+  vec3 col = vec3(0.03,0.04,0.07) + glow * vec3(0.1 + pulse);
+  gl_FragColor = vec4(col,1.0);
+}
+`;
+
+/* ================== SCENE ================== */
 
 export default function Scene() {
   const { id } = useParams();
@@ -20,27 +48,26 @@ export default function Scene() {
 
   const [descriptor, setDescriptor] = useState(null);
   const [started, setStarted] = useState(false);
+  const [activeText, setActiveText] = useState(null);
   const [error, setError] = useState(null);
 
-  /* -------- refs -------- */
-  const rendererRef = useRef(null);
-  const sceneRef = useRef(null);
-  const cameraRef = useRef(null);
-  const rafRef = useRef(null);
+  const [debug, setDebug] = useState({
+    shader: "fallback",
+    music: null,
+    voices: 0,
+    texts: 0,
+  });
 
+  const rafRef = useRef(null);
   const videoRef = useRef(null);
-  const videoTexRef = useRef(null);
 
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const freqRef = useRef(null);
-  const masterRef = useRef(null);
   const sourcesRef = useRef([]);
   const timersRef = useRef([]);
 
-  const particlesRef = useRef(null);
-
-  /* ------------------ LOAD SCENE ------------------ */
+  /* ================== LOAD DESCRIPTOR ================== */
 
   useEffect(() => {
     supabase
@@ -54,175 +81,185 @@ export default function Scene() {
       });
   }, [id]);
 
-  /* ------------------ THREE INIT ------------------ */
+  /* ================== THREE INIT ================== */
 
   useEffect(() => {
     if (!descriptor || !mountRef.current) return;
 
-    if (!descriptor.videos || descriptor.videos.length === 0) {
-      setError("Aucune vidéo disponible pour cette scène.");
-      return;
-    }
-
-    if (!descriptor.music?.path) {
-      setError("Musique manquante pour cette scène.");
-      return;
-    }
-
     const mount = mountRef.current;
+    // 🔥 FIX ABSOLU : le conteneur Three ne capte JAMAIS les events
+mount.style.pointerEvents = "none";
+    let disposed = false;
 
-    /* --- renderer --- */
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
-    renderer.domElement.style.pointerEvents = "auto";
+    renderer.setClearColor(0x000000, 1);
+
+    // 🔥 FIX CRITIQUE : laisse passer les clics vers React
+    renderer.domElement.style.pointerEvents = "none";
+
     mount.appendChild(renderer.domElement);
 
-    /* --- scene & camera --- */
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000);
-
     const camera = new THREE.PerspectiveCamera(
       60,
       mount.clientWidth / mount.clientHeight,
       0.1,
-      200
+      100
     );
     camera.position.z = 5;
 
-    rendererRef.current = renderer;
-    sceneRef.current = scene;
-    cameraRef.current = camera;
+    /* ---------- SHADER BACKGROUND ---------- */
 
-    /* --- VIDEO (disque) --- */
+    const uniforms = {
+      uTime: { value: 0 },
+      uIntensity: { value: descriptor.fx?.[0]?.intensity ?? 0.6 },
+      uResolution: {
+        value: new THREE.Vector2(mount.clientWidth, mount.clientHeight),
+      },
+    };
+
+    const bgMat = new THREE.ShaderMaterial({
+      vertexShader: VERT,
+      fragmentShader: FRAG_FALLBACK,
+      uniforms,
+      depthWrite: false,
+      depthTest: false,
+    });
+
+    const bg = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
+    bg.position.z = -2;
+    scene.add(bg);
+
+    /* ---------- LOAD SHADER FROM DESCRIPTOR ---------- */
+
+    const shaderPath = descriptor?.fx?.[0]?.shader || null;
+    if (shaderPath) {
+      fetch(publicUrl(shaderPath))
+        .then((r) => r.text())
+        .then((frag) => {
+          if (disposed) return;
+          bgMat.fragmentShader = frag;
+          bgMat.needsUpdate = true;
+          setDebug((d) => ({ ...d, shader: shaderPath }));
+        })
+        .catch((e) => console.error("Shader load error:", shaderPath, e));
+    }
+
+    /* ---------- VIDEO ---------- */
+
+    const videoPath = descriptor.videos?.[0]?.path;
     const video = document.createElement("video");
-    video.src = publicUrl(descriptor.videos[0].path);
+    video.src = videoPath ? publicUrl(videoPath) : "";
     video.loop = true;
     video.muted = true;
     video.playsInline = true;
     video.crossOrigin = "anonymous";
-    video.preload = "auto";
-
     videoRef.current = video;
 
     const videoTex = new THREE.VideoTexture(video);
-    videoTex.minFilter = THREE.LinearFilter;
-    videoTex.magFilter = THREE.LinearFilter;
-    videoTexRef.current = videoTex;
-
-    const disk = new THREE.Mesh(
-      new THREE.CircleGeometry(1.4, 96),
+    const videoMesh = new THREE.Mesh(
+      new THREE.CircleGeometry(1.6, 96),
       new THREE.MeshBasicMaterial({ map: videoTex })
     );
-    scene.add(disk);
+    videoMesh.position.z = -0.2;
+    scene.add(videoMesh);
 
-    /* --- PARTICULES --- */
-    const count = 3000;
+    /* ---------- PARTICLES ---------- */
+
+    const count = 2000;
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 12;
-      pos[i * 3 + 1] = (Math.random() - 0.5) * 7;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 12;
+      pos[i * 3] = (Math.random() - 0.5) * 10;
+      pos[i * 3 + 1] = (Math.random() - 0.5) * 6;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 10;
     }
 
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-
-    const mat = new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: 0.03,
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const pMat = new THREE.PointsMaterial({
+      size: 0.02,
+      opacity: 0.6,
       transparent: true,
-      opacity: 0.8,
       depthWrite: false,
     });
 
-    const particles = new THREE.Points(geo, mat);
+    const particles = new THREE.Points(pGeo, pMat);
     scene.add(particles);
-    particlesRef.current = particles;
 
-    /* --- resize --- */
+    /* ---------- RESIZE ---------- */
+
     const onResize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
+      const w = mount.clientWidth || 1;
+      const h = mount.clientHeight || 1;
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
+      renderer.setSize(w, h);
+      uniforms.uResolution.value.set(w, h);
     };
     window.addEventListener("resize", onResize);
 
-    /* --- loop --- */
+    /* ---------- LOOP ---------- */
+
+    const clock = new THREE.Clock();
+
     const animate = () => {
       rafRef.current = requestAnimationFrame(animate);
 
-      const analyser = analyserRef.current;
-      const freq = freqRef.current;
+      uniforms.uTime.value = clock.getElapsedTime();
 
-      if (analyser && freq) {
-        analyser.getByteFrequencyData(freq);
+      if (analyserRef.current && freqRef.current) {
+        analyserRef.current.getByteFrequencyData(freqRef.current);
         const avg =
-          freq.reduce((a, b) => a + b, 0) / (freq.length * 255);
+          freqRef.current.reduce((a, b) => a + b, 0) /
+          (freqRef.current.length * 255);
 
-        particles.material.size = 0.02 + avg * 0.08;
-        particles.material.opacity = 0.5 + avg * 0.5;
-        disk.scale.setScalar(1 + avg * 0.08);
+        uniforms.uIntensity.value = 0.2 + avg * 0.8;
+        particles.material.size = 0.015 + avg * 0.05;
+        videoMesh.scale.setScalar(1 + avg * 0.05);
       }
 
-      particles.rotation.y += 0.0004;
+      particles.rotation.y += 0.0003;
       renderer.render(scene, camera);
     };
     animate();
 
-    /* --- cleanup (CRITIQUE) --- */
+    /* ---------- CLEANUP ---------- */
+
     return () => {
+      disposed = true;
       cancelAnimationFrame(rafRef.current);
       window.removeEventListener("resize", onResize);
 
       timersRef.current.forEach(clearTimeout);
-      timersRef.current = [];
+      sourcesRef.current.forEach((s) => s.stop?.());
+      audioCtxRef.current?.close();
 
-      sourcesRef.current.forEach((s) => {
-        try {
-          s.stop();
-        } catch {}
-      });
-      sourcesRef.current = [];
-
-      if (audioCtxRef.current) audioCtxRef.current.close();
-
-      try {
-        video.pause();
-        video.src = "";
-      } catch {}
-
-      geo.dispose();
-      mat.dispose();
-      disk.geometry.dispose();
-      disk.material.dispose();
+      video.pause();
       videoTex.dispose();
-
+      pGeo.dispose();
+      pMat.dispose();
+      bgMat.dispose();
       renderer.dispose();
 
-      /* 🔥 FIX DÉFINITIF : retirer le canvas */
-      if (renderer.domElement && renderer.domElement.parentNode) {
-        renderer.domElement.parentNode.removeChild(renderer.domElement);
-      }
+      renderer.domElement.remove();
     };
   }, [descriptor]);
 
-  /* ------------------ START AUDIO ------------------ */
+  /* ================== START EXPERIENCE ================== */
 
   const start = async () => {
     if (started || !descriptor) return;
     setStarted(true);
 
-    try {
-      await videoRef.current.play();
-    } catch {}
+    await videoRef.current?.play().catch(() => {});
 
     const ctx = new AudioContext();
     audioCtxRef.current = ctx;
 
     const master = ctx.createGain();
     master.gain.value = 0.9;
-    masterRef.current = master;
 
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
@@ -232,78 +269,123 @@ export default function Scene() {
     master.connect(analyser);
     analyser.connect(ctx.destination);
 
-    const musicRes = await fetch(publicUrl(descriptor.music.path));
-    const musicBuf = await ctx.decodeAudioData(await musicRes.arrayBuffer());
+    /* MUSIC */
+    try {
+      const buf = await fetch(publicUrl(descriptor.music.path))
+        .then((r) => r.arrayBuffer())
+        .then((b) => ctx.decodeAudioData(b));
 
-    const music = ctx.createBufferSource();
-    music.buffer = musicBuf;
-    music.loop = true;
-    music.connect(master);
-    music.start();
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.connect(master);
+      src.start();
 
-    sourcesRef.current.push(music);
+      setDebug((d) => ({ ...d, music: descriptor.music.path }));
+      sourcesRef.current.push(src);
+    } catch {}
 
-    descriptor.voices.forEach((v) => {
+    /* VOICES */
+    descriptor.voices?.forEach((v, i) => {
       const t = setTimeout(async () => {
-        const res = await fetch(publicUrl(v.path));
-        const buf = await ctx.decodeAudioData(await res.arrayBuffer());
+        const buf = await fetch(publicUrl(v.path))
+          .then((r) => r.arrayBuffer())
+          .then((b) => ctx.decodeAudioData(b));
+
         const src = ctx.createBufferSource();
         const g = ctx.createGain();
-        g.gain.value = v.gain || 0.6;
+        g.gain.value = v.gain ?? 0.8;
 
         src.buffer = buf;
         src.connect(g);
         g.connect(master);
         src.start();
 
+        setDebug((d) => ({ ...d, voices: d.voices + 1 }));
         sourcesRef.current.push(src);
-      }, v.start * 1000);
+      }, i * 800);
 
       timersRef.current.push(t);
     });
+
+    /* TEXTS */
+    descriptor.texts?.forEach((t, i) => {
+      const show = setTimeout(async () => {
+        const txt = await fetch(publicUrl(t.path)).then((r) => r.text());
+        setActiveText(txt);
+        setDebug((d) => ({ ...d, texts: d.texts + 1 }));
+        setTimeout(() => setActiveText(null), 1000);
+      }, i * 1200);
+
+      timersRef.current.push(show);
+    });
   };
 
-  /* ------------------ UI ------------------ */
+  /* ================== UI ================== */
 
-  if (error) {
-    return (
-      <div style={{ background: "black", color: "red", padding: 20 }}>
-        ❌ {error}
-      </div>
-    );
-  }
-
-  if (!descriptor) {
-    return (
-      <div style={{ background: "black", color: "white", padding: 20 }}>
-        Chargement…
-      </div>
-    );
-  }
+  if (error) return <div style={{ color: "red" }}>{error}</div>;
+  if (!descriptor) return <div style={{ color: "white" }}>Chargement…</div>;
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "black" }}>
       <div ref={mountRef} style={{ position: "absolute", inset: 0 }} />
 
       {!started && (
-        <button
-          type="button"
+        <div
           onClick={start}
           style={{
             position: "absolute",
             inset: 0,
+            zIndex: 10,
             background: "rgba(0,0,0,0.85)",
             color: "white",
-            fontSize: 20,
+            fontSize: 22,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
-            border: "none",
           }}
         >
           Entrer
-        </button>
+        </div>
+      )}
+
+      {activeText && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "18%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(0,0,0,0.6)",
+            padding: 16,
+            borderRadius: 16,
+            color: "white",
+          }}
+        >
+          {activeText}
+        </div>
+      )}
+
+      {DEBUG_MEDIA && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 10,
+            left: 10,
+            background: "rgba(0,0,0,0.7)",
+            color: "#0f0",
+            fontSize: 12,
+            padding: 10,
+            borderRadius: 8,
+            zIndex: 20,
+          }}
+        >
+          <div>🎨 shader: {debug.shader}</div>
+          <div>🎵 music: {debug.music}</div>
+          <div>🗣 voices: {debug.voices}</div>
+          <div>📝 texts: {debug.texts}</div>
+        </div>
       )}
     </div>
   );

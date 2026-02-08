@@ -1,115 +1,107 @@
 /**
- * Scene Composer V2
- * - pure logic
- * - seed-based uniqueness
- * - tag-based soft scoring
+ * SceneComposer V3 — CANONICAL & STABLE
+ * - shader réellement persisté
+ * - aucun preset
+ * - compatible avec ton Scene.jsx actuel
  */
 
-/* ---------- seeded random ---------- */
 function seededRandom(seed) {
-  let t = seed % 2147483647;
+  let t = Number.isFinite(seed)
+    ? Math.floor(seed)
+    : Math.floor(Date.now() + Math.random() * 1e9);
+
+  t = t % 2147483647;
+  if (t <= 0) t += 2147483646;
+
   return () => (t = (t * 16807) % 2147483647) / 2147483647;
 }
 
-/* ---------- utils ---------- */
 function pickOne(list, rand) {
-  if (!list.length) return null;
+  if (!Array.isArray(list) || list.length === 0) return null;
   return list[Math.floor(rand() * list.length)];
 }
 
-function pickMany(list, max, rand) {
-  const shuffled = [...list].sort(() => rand() - 0.5);
-  return shuffled.slice(0, max);
+function pickMany(list, count, rand) {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const n = Math.max(1, Math.min(count, list.length));
+  return [...list].sort(() => rand() - 0.5).slice(0, n);
 }
 
-/* ---------- tag scoring ---------- */
-function scoreAsset(asset, emojiTags) {
-  if (!asset.tags || !emojiTags?.length) return 1;
-  const matches = asset.tags.filter((t) =>
-    emojiTags.includes(t)
-  ).length;
-  return 1 + matches; // biais doux
+function pool(assets, category, climate) {
+  const primary = assets.filter(
+    (a) =>
+      a &&
+      a.enabled === true &&
+      a.category === category &&
+      a.climate === climate
+  );
+
+  if (primary.length) return primary;
+
+  return assets.filter(
+    (a) => a && a.enabled === true && a.category === category
+  );
 }
 
-function weightedPool(assets, emojiTags) {
-  const pool = [];
-  assets.forEach((a) => {
-    const weight = scoreAsset(a, emojiTags);
-    for (let i = 0; i < weight; i++) pool.push(a);
-  });
-  return pool;
-}
+export function composeScene({ assets, climate = "calm", seed }) {
+  if (!Array.isArray(assets) || assets.length === 0) {
+    throw new Error("composeScene: assets missing");
+  }
 
-/* ---------- composer ---------- */
-export function composeScene({ assets, climate, seed, emojiTags = [] }) {
   const rand = seededRandom(seed);
+  const duration = 180;
 
-  /* --- pools filtrés par climat --- */
-  const musicPool = assets.filter(
-    (a) => a.category === "music" && a.climate === climate
-  );
-  const videoPool = assets.filter(
-    (a) => a.category === "video" && a.climate === climate
-  );
-  const voicePool = assets.filter(
-    (a) => a.category === "voice" && a.climate === climate
-  );
+  /* ---------- MUSIC ---------- */
+  const music = pickOne(pool(assets, "music", climate), rand);
+  if (!music) throw new Error("composeScene: no music");
 
-  /* --- scoring doux par tags --- */
-  const scoredMusic = weightedPool(musicPool, emojiTags);
-  const scoredVideo = weightedPool(videoPool, emojiTags);
-  const scoredVoice = weightedPool(voicePool, emojiTags);
-
-  /* --- musique maîtresse --- */
-  const music = pickOne(scoredMusic, rand);
-  if (!music) throw new Error("No music for climate " + climate);
-
-  const duration = music.duration || 180;
-
-  /* --- vidéos --- */
-  const videos = pickMany(
-    scoredVideo,
-    1 + Math.floor(rand() * 2),
-    rand
-  ).map((v) => ({
+  /* ---------- VIDEO ---------- */
+  const videos = pickMany(pool(assets, "video", climate), 1, rand).map((v) => ({
     id: v.id,
     path: v.path,
     start: 0,
     end: duration,
-    opacity: 1,
-    blend: "normal",
   }));
 
-  /* --- voix --- */
-  const voices = pickMany(
-    scoredVoice,
-    1 + Math.floor(rand() * 3),
-    rand
-  ).map((v) => ({
+  /* ---------- VOICES (test rapide) ---------- */
+  const voices = pickMany(pool(assets, "voice", climate), 1, rand).map((v) => ({
     id: v.id,
     path: v.path,
-    start: Math.floor(rand() * duration * 0.8),
-    gain: 0.5 + rand() * 0.3,
+    start: Math.floor(rand() * 6), // volontairement tôt
+    gain: 0.8,
   }));
 
-  /* --- fx --- */
+  /* ---------- TEXTS ---------- */
+  const texts = pickMany(pool(assets, "text", climate), 1, rand).map((t) => ({
+    id: t.id,
+    path: t.path,
+    start: Math.floor(rand() * 6),
+    duration: 6,
+  }));
+
+  /* ---------- SHADER (clé du bug) ---------- */
+  const shader = pickOne(pool(assets, "shader", climate), rand);
+
   const fx = [
     {
       type: "particles",
-      preset: climate,
-      intensity: 0.3 + rand() * 0.5,
+      shader: shader ? shader.path : null,
+      intensity: 0.6,
     },
   ];
 
+  /* ---------- FINAL DESCRIPTOR ---------- */
   return {
     duration,
     climate,
+    seed,
     music: {
       id: music.id,
       path: music.path,
     },
     videos,
     voices,
+    texts,
     fx,
   };
 }
