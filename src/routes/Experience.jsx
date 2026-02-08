@@ -72,11 +72,19 @@ export default function Experience() {
     setEnterError(null);
     try {
       const scene = await createScene({ emojis: selected });
-      navigate(`/scene/${scene.id}`);
+      if (scene?.id) {
+        navigate(`/scene/${scene.id}`);
+      } else {
+        throw new Error("Scene créée sans identifiant.");
+      }
     } catch (error) {
       console.error("Impossible de traverser le paysage:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Erreur inconnue lors de la création de la scène.";
       setEnterError(
-        "Impossible de lancer la scène pour le moment. Réessaie dans un instant."
+        `Impossible de lancer la scène : ${message}`
       );
     } finally {
       setIsEntering(false);
