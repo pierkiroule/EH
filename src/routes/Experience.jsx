@@ -83,12 +83,14 @@ export default function Experience() {
       }}
     >
       {/* 🌌 GRAPH */}
-      <EmojiGraph
-        nodes={nodes}
-        links={links}
-        selected={selected}
-        onToggle={toggleEmoji}
-      />
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <EmojiGraph
+          nodes={nodes}
+          links={links}
+          selected={selected}
+          onToggle={toggleEmoji}
+        />
+      </div>
 
       {/* 🎯 SELECTEUR */}
       <EmojiSelector value={selected} onRemove={removeEmoji} />
@@ -101,6 +103,8 @@ export default function Experience() {
         onClick={enter}
         disabled={selected.length !== 3}
         style={{
+          position: "relative",
+          zIndex: 10,
           marginTop: 8,
           padding: "14px",
           borderRadius: 28,
